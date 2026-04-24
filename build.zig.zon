@@ -1,0 +1,16 @@
+.{
+    .fingerprint = 0x29ef2d3652703387,
+    .name = .pts,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+        "testdata",
+        "README.md",
+        "LICENSE",
+    },
+}

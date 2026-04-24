@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-linux
+            archive: tar.gz
+          - target: aarch64-linux
+            archive: tar.gz
+          - target: x86_64-macos
+            archive: tar.gz
+          - target: aarch64-macos
+            archive: tar.gz
+          - target: x86_64-windows
+            archive: zip
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - run: ./scripts/package-release.sh ${{ matrix.target }} ${{ matrix.archive }}
+      - uses: actions/upload-artifact@v5
+        with:
+          name: pts-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

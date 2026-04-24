@@ -1,0 +1,4 @@
+[tools]
+zig = "0.16.0"
+vhs = "latest"
+ttyd = "latest"

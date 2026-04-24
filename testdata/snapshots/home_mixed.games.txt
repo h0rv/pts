@@ -1,0 +1,4 @@
+NBA|upcoming|BOS @ PHI|G3   7:00 PM ET|Prime|https://plaintextsports.com/nba/2026-04-24/bos-phi
+MLB|upcoming|PHI @ ATL|7:15 PM ET|Apple TV|https://plaintextsports.com/mlb/2026-04-24/phi-atl
+Soccer|upcoming|LOU @ ORL|5:30 PM ET|Victory+|https://plaintextsports.com/nwsl/#lou-orl
+Soccer|upcoming|SUN @ NFO|3:00 PM ET||https://plaintextsports.com/premier-league/#sun-nfo
