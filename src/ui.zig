@@ -451,7 +451,7 @@ fn render(app: *App) !void {
                 try style.write(w, app.color, .dim, "↑");
                 try w.print(" {d} lines\n", .{app.scroll});
             }
-            try renderRawText(w, p.visible_text, app.scroll, body_budget);
+            try renderRawText(w, app.color, p.visible_text, app.scroll, body_budget);
         }
     } else {
         try style.write(w, app.color, .header, "Plain Text Sports");
@@ -657,7 +657,77 @@ fn splitBeforeTimeZone(text: []const u8, zone_index: usize, suffix_len: usize) G
     return .{ .event = event, .time = time };
 }
 
-fn renderRawText(w: *std.Io.Writer, text: []const u8, scroll: usize, max_lines: usize) !void {
+fn renderRawLine(w: *std.Io.Writer, color: bool, line: []const u8) !void {
+    const trimmed = std.mem.trim(u8, line, " \t\r");
+    if (trimmed.len == 0) {
+        try w.writeByte('\n');
+        return;
+    }
+    if (isTimeText(trimmed)) {
+        try writeInlineTime(w, color, trimmed);
+        try w.writeByte('\n');
+        return;
+    }
+    if (rawLineStyle(trimmed)) |kind| {
+        try style.write(w, color, kind, line);
+    } else {
+        try w.writeAll(line);
+    }
+    try w.writeByte('\n');
+}
+
+fn writeInlineTime(w: *std.Io.Writer, color: bool, value: []const u8) !void {
+    if (color) try w.writeAll("\x1b[33m");
+    if (needsHourPadding(value)) try w.writeByte('0');
+    try w.writeAll(value);
+    if (color) try w.writeAll("\x1b[0m");
+}
+
+fn rawLineStyle(line: []const u8) ?style.Kind {
+    if (isRuleLine(line) or isScoreHeader(line)) return .dim;
+    if (isTeamScoreRow(line)) return .league;
+    if (isSectionHeader(line)) return .header;
+    if (std.mem.indexOf(u8, line, " vs. ") != null and std.mem.indexOf(u8, line, " | ") != null) return .title;
+    return null;
+}
+
+fn isTimeText(line: []const u8) bool {
+    return std.mem.indexOf(u8, line, ":") != null and (std.mem.endsWith(u8, line, " AM ET") or std.mem.endsWith(u8, line, " PM ET"));
+}
+
+fn isRuleLine(line: []const u8) bool {
+    if (line.len < 3) return false;
+    for (line) |c| {
+        if (c != '-') return false;
+    }
+    return true;
+}
+
+fn isScoreHeader(line: []const u8) bool {
+    return std.mem.startsWith(u8, line, "1  2") and std.mem.indexOf(u8, line, " T  H  E") != null;
+}
+
+fn isTeamScoreRow(line: []const u8) bool {
+    if (line.len < 3) return false;
+    return std.ascii.isUpper(line[0]) and std.ascii.isUpper(line[1]) and std.ascii.isUpper(line[2]) and (line.len == 3 or line[3] == ' ');
+}
+
+fn isSectionHeader(line: []const u8) bool {
+    if (std.mem.endsWith(u8, line, ":")) return true;
+    if (std.mem.eql(u8, line, "Probable Pitchers")) return true;
+    if (std.mem.eql(u8, line, "Box Score")) return true;
+    if (std.mem.eql(u8, line, "Scoring Summary")) return true;
+    return false;
+}
+
+pub fn rawLineForTest(allocator: Allocator, color: bool, line: []const u8) ![]u8 {
+    var out = std.Io.Writer.Allocating.init(allocator);
+    errdefer out.deinit();
+    try renderRawLine(&out.writer, color, line);
+    return out.toOwnedSlice();
+}
+
+fn renderRawText(w: *std.Io.Writer, color: bool, text: []const u8, scroll: usize, max_lines: usize) !void {
     var lines: usize = 0;
     var skipped: usize = 0;
     var started = false;
@@ -672,7 +742,7 @@ fn renderRawText(w: *std.Io.Writer, text: []const u8, scroll: usize, max_lines: 
             continue;
         }
         if (lines >= max_lines) return;
-        try w.print("{s}\n", .{line});
+        try renderRawLine(w, color, line);
         lines += 1;
     }
 }

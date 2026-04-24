@@ -35,6 +35,23 @@ test "time normalization pads one-digit hours" {
     try std.testing.expectEqualStrings("10:30 PM ET", late);
 }
 
+test "raw game detail line colors can be disabled" {
+    const line = try ui.rawLineForTest(std.testing.allocator, false, "PHI                                -  0  0");
+    defer std.testing.allocator.free(line);
+    try std.testing.expectEqualStrings("PHI                                -  0  0\n", line);
+}
+
+test "raw game detail colors section and time" {
+    const section = try ui.rawLineForTest(std.testing.allocator, true, "Probable Pitchers:");
+    defer std.testing.allocator.free(section);
+    try std.testing.expect(std.mem.indexOf(u8, section, "\x1b[") != null);
+
+    const game_time = try ui.rawLineForTest(std.testing.allocator, true, "7:15 PM ET");
+    defer std.testing.allocator.free(game_time);
+    try std.testing.expect(std.mem.indexOf(u8, game_time, "\x1b[") != null);
+    try std.testing.expect(std.mem.indexOf(u8, game_time, "07:15 PM ET") != null);
+}
+
 test "body budget reserves footer row" {
     const body_rows = ui.bodyRowsForTest(small_terminal_rows, false);
     try std.testing.expectEqual(small_terminal_rows - footer_row_count, body_rows);
