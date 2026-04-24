@@ -560,7 +560,7 @@ fn renderGameLine(w: *std.Io.Writer, prefix: []const u8, game: model.Game) !void
     try writeCell(w, parts.event, event_col_width);
     try w.writeByte(' ');
     try writeTimeCell(w, parts.time, time_col_width);
-    if (game.network) |network| try w.print(" · {s}", .{network});
+    if (game.network) |network| try w.print(" {s}", .{network});
     try w.writeByte('\n');
 }
 

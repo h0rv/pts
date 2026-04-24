@@ -195,6 +195,7 @@ fn isNoiseLine(line: []const u8) bool {
     if (t.len == 0) return false;
     if (std.mem.eql(u8, t, "Dark ModeLight Mode")) return true;
     if (std.mem.startsWith(u8, t, "< All ")) return true;
+    if (std.mem.eql(u8, t, "Probable Pitchers")) return true;
     if (std.mem.indexOf(u8, t, "plaintextsports.com | Mobile App") != null) return true;
     if (std.mem.indexOf(u8, t, "Twitter | Instagram | Twitch") != null) return true;
     if (std.mem.eql(u8, t, ".                                           .")) return true;
