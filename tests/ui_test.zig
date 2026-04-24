@@ -35,6 +35,12 @@ test "time normalization pads one-digit hours" {
     try std.testing.expectEqualStrings("10:30 PM ET", late);
 }
 
+test "raw game detail trims edge whitespace" {
+    const line = try ui.rawLineForTest(std.testing.allocator, false, "  text with padding   ");
+    defer std.testing.allocator.free(line);
+    try std.testing.expectEqualStrings("text with padding\n", line);
+}
+
 test "raw game detail line colors can be disabled" {
     const line = try ui.rawLineForTest(std.testing.allocator, false, "PHI                                -  0  0");
     defer std.testing.allocator.free(line);

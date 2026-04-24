@@ -711,9 +711,9 @@ fn renderRawLine(w: *std.Io.Writer, color: bool, line: []const u8) !void {
         return;
     }
     if (rawLineStyle(trimmed)) |kind| {
-        try style.write(w, color, kind, line);
+        try style.write(w, color, kind, trimmed);
     } else {
-        try w.writeAll(line);
+        try w.writeAll(trimmed);
     }
     try w.writeByte('\n');
 }
