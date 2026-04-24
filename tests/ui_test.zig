@@ -25,6 +25,16 @@ test "frame output clears tail for unterminated last line" {
     try std.testing.expectEqualStrings("header" ++ clear_line ++ newline ++ "short" ++ clear_line ++ clear_rest, frame);
 }
 
+test "time normalization pads one-digit hours" {
+    const early = try ui.normalizeTimeForTest(std.testing.allocator, "7:00 PM ET");
+    defer std.testing.allocator.free(early);
+    try std.testing.expectEqualStrings("07:00 PM ET", early);
+
+    const late = try ui.normalizeTimeForTest(std.testing.allocator, "10:30 PM ET");
+    defer std.testing.allocator.free(late);
+    try std.testing.expectEqualStrings("10:30 PM ET", late);
+}
+
 test "body budget reserves footer row" {
     const body_rows = ui.bodyRowsForTest(small_terminal_rows, false);
     try std.testing.expectEqual(small_terminal_rows - footer_row_count, body_rows);

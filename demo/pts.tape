@@ -15,7 +15,7 @@ Sleep 1500ms
 Down 11
 Sleep 700ms
 Enter
-Sleep 1800ms
+Sleep 3200ms
 Type "b"
 Sleep 700ms
 Type "q"

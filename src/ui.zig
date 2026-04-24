@@ -24,6 +24,11 @@ const delete_key: u8 = 127;
 const backspace_key: u8 = 8;
 const footer_gap_cols: usize = 3;
 const footer_meta_buf_len: usize = 64;
+const league_col_width: usize = 6;
+const status_col_width: usize = 5;
+const matchup_col_width: usize = 9;
+const event_col_width: usize = 4;
+const time_col_width: usize = 11;
 
 const RawMode = struct {
     active: bool = false,
@@ -533,21 +538,94 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
         if (emitted >= capacity) return;
         const selected = filtered_index == app.selected;
         const prefix = if (selected) "> " else "  ";
-        const status_mark = switch (game.status) {
-            .live => "LIVE",
-            .upcoming => "UP",
-            .final => "FINAL",
-            .postponed => "PPD",
-            .unknown => "",
-        };
-        const league = if (game.sport == .unknown) "" else game.league_name;
-        try w.print("{s}{s:<6} {s:<5} {s:<9} {s}", .{ prefix, league, status_mark, game.title, game.status_text });
-        if (game.network) |n| try w.print(" · {s}", .{n});
-        try w.writeAll("\n");
+        try renderGameLine(w, prefix, game);
         filtered_index += 1;
         emitted += 1;
     }
     if (filtered_index == 0) try w.writeAll("No games match filter. Press / to change.\n");
+}
+
+fn renderGameLine(w: *std.Io.Writer, prefix: []const u8, game: model.Game) !void {
+    const league = if (game.sport == .unknown) "" else game.league_name;
+    const status_mark = statusLabel(game.status);
+    const parts = splitGameText(game.status_text);
+
+    try w.writeAll(prefix);
+    try writeCell(w, league, league_col_width);
+    try w.writeByte(' ');
+    try writeCell(w, status_mark, status_col_width);
+    try w.writeByte(' ');
+    try writeCell(w, game.title, matchup_col_width);
+    try w.writeByte(' ');
+    try writeCell(w, parts.event, event_col_width);
+    try w.writeByte(' ');
+    try writeTimeCell(w, parts.time, time_col_width);
+    if (game.network) |network| try w.print(" · {s}", .{network});
+    try w.writeByte('\n');
+}
+
+fn writeCell(w: *std.Io.Writer, value: []const u8, width: usize) !void {
+    const n = @min(value.len, width);
+    try w.writeAll(value[0..n]);
+    var spaces = width - n;
+    while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
+}
+
+fn writeTimeCell(w: *std.Io.Writer, value: []const u8, width: usize) !void {
+    const extra = if (needsHourPadding(value)) @as(usize, 1) else 0;
+    var written: usize = 0;
+    if (extra != 0 and written < width) {
+        try w.writeByte('0');
+        written += 1;
+    }
+    const n = @min(value.len, width - written);
+    try w.writeAll(value[0..n]);
+    written += n;
+    var spaces = width - written;
+    while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
+}
+
+fn needsHourPadding(value: []const u8) bool {
+    return value.len >= "H:".len and std.ascii.isDigit(value[0]) and value[1] == ':';
+}
+
+pub fn normalizeTimeForTest(allocator: Allocator, value: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    if (needsHourPadding(value)) try out.append(allocator, '0');
+    try out.appendSlice(allocator, value);
+    return out.toOwnedSlice(allocator);
+}
+
+fn statusLabel(status: model.StatusKind) []const u8 {
+    return switch (status) {
+        .live => "LIVE",
+        .upcoming => "UP",
+        .final => "FINAL",
+        .postponed => "PPD",
+        .unknown => "",
+    };
+}
+
+const GameTextParts = struct {
+    event: []const u8,
+    time: []const u8,
+};
+
+fn splitGameText(text: []const u8) GameTextParts {
+    const t = std.mem.trim(u8, text, " \t");
+    if (std.mem.indexOf(u8, t, " PM")) |pm| return splitBeforeTimeZone(t, pm, " PM ET".len);
+    if (std.mem.indexOf(u8, t, " AM")) |am| return splitBeforeTimeZone(t, am, " AM ET".len);
+    return .{ .event = "", .time = t };
+}
+
+fn splitBeforeTimeZone(text: []const u8, zone_index: usize, suffix_len: usize) GameTextParts {
+    const time_end = @min(text.len, zone_index + suffix_len);
+    var time_start = zone_index;
+    while (time_start > 0 and text[time_start - 1] != ' ') time_start -= 1;
+    const event = std.mem.trim(u8, text[0..time_start], " \t");
+    const time = std.mem.trim(u8, text[time_start..time_end], " \t");
+    return .{ .event = event, .time = time };
 }
 
 fn renderRawText(w: *std.Io.Writer, text: []const u8, scroll: usize, max_lines: usize) !void {
