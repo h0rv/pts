@@ -12,14 +12,10 @@ Set Theme "Monokai Pro (Filter Ristretto)"
 Type "./zig-out/bin/pts"
 Enter
 Sleep 1500ms
-Down 6
-Sleep 600ms
-PageDown
-Sleep 800ms
-Up 2
-Sleep 500ms
+Down 11
+Sleep 700ms
 Enter
-Sleep 1500ms
+Sleep 1800ms
 Type "b"
 Sleep 700ms
 Type "q"

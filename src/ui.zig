@@ -6,6 +6,25 @@ const cache = @import("cache.zig");
 
 const Allocator = std.mem.Allocator;
 
+const fallback_terminal_rows: usize = 24;
+const fallback_terminal_cols: usize = 80;
+const min_body_rows: usize = 6;
+const footer_rows: usize = 1;
+const no_error_rows: usize = 0;
+const error_rows: usize = 2;
+const game_list_header_rows: usize = 1;
+const min_visible_games: usize = 1;
+const single_row_step: usize = 1;
+const line_count_initial: usize = 1;
+const ms_per_second: u64 = 1000;
+const ms_per_second_i64: i64 = 1000;
+const poll_tick_ms: i32 = 1000;
+const escape_key: u8 = 27;
+const delete_key: u8 = 127;
+const backspace_key: u8 = 8;
+const footer_gap_cols: usize = 3;
+const footer_meta_buf_len: usize = 64;
+
 const RawMode = struct {
     active: bool = false,
     original: if (@import("builtin").os.tag == .linux) std.posix.termios else void = if (@import("builtin").os.tag == .linux) undefined else {},
@@ -56,7 +75,7 @@ const App = struct {
             .cache_root = try allocator.dupe(u8, cache_root),
             .current_url = try allocator.dupe(u8, url),
             .filter = try allocator.dupe(u8, ""),
-            .refresh_interval_ms = refresh_seconds * 1000,
+            .refresh_interval_ms = refresh_seconds * ms_per_second,
             .use_cache = use_cache,
             .debug = debug,
         };
@@ -182,6 +201,19 @@ const App = struct {
         self.scroll = 0;
         self.clampSelected();
     }
+
+    fn activeUrl(self: *App) []const u8 {
+        if (self.gameAtFiltered(self.selected)) |game| {
+            if (game.url) |url| return url;
+        }
+        return self.current_url;
+    }
+
+    fn openBrowser(self: *App) void {
+        openUrl(self.io, self.activeUrl()) catch |err| {
+            self.setError("open browser failed: {any}", .{err});
+        };
+    }
 };
 
 pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_root: []const u8, url: []const u8, refresh_seconds: u64, use_cache: bool, debug: bool) !void {
@@ -202,21 +234,22 @@ pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_roo
         switch (key) {
             .none => if (shouldAutoRefresh(&app)) app.load(),
             .quit => running = false,
-            .down => moveDown(&app, 1),
-            .up => moveUp(&app, 1),
-            .page_down => moveDown(&app, visibleBodyRows()),
-            .page_up => moveUp(&app, visibleBodyRows()),
+            .down => moveDown(&app, single_row_step),
+            .up => moveUp(&app, single_row_step),
+            .page_down => moveDown(&app, currentBodyRows(&app)),
+            .page_up => moveUp(&app, currentBodyRows(&app)),
             .top => {
                 app.selected = 0;
                 app.scroll = 0;
             },
             .bottom => {
                 const count = app.filteredCount();
-                if (count > 0) app.selected = count - 1 else app.scroll = maxRawScroll(&app);
+                if (count > 0) app.selected = count - single_row_step else app.scroll = maxRawScroll(&app);
             },
             .enter => app.openSelected(),
             .back => app.back(),
             .refresh => app.load(),
+            .open_browser => app.openBrowser(),
             .auto => app.auto_refresh = !app.auto_refresh,
             .help => app.help = !app.help,
             .filter => {
@@ -228,7 +261,7 @@ pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_roo
     }
 }
 
-const Key = enum { none, quit, down, up, page_down, page_up, top, bottom, enter, back, refresh, auto, help, filter };
+const Key = enum { none, quit, down, up, page_down, page_up, top, bottom, enter, back, refresh, open_browser, auto, help, filter };
 
 fn readKey(io: std.Io, timeout_ms: i32) !Key {
     if (!try inputReady(timeout_ms)) return .none;
@@ -243,8 +276,9 @@ fn readKey(io: std.Io, timeout_ms: i32) !Key {
         'G' => .bottom,
         '\r', '\n' => .enter,
         'b' => .back,
-        27 => try readEscapeKey(io),
+        escape_key => try readEscapeKey(io),
         'r' => .refresh,
+        'o' => .open_browser,
         'a' => .auto,
         '?' => .help,
         '/' => .filter,
@@ -288,7 +322,7 @@ fn readEscapeKey(io: std.Io) !Key {
 }
 
 fn ensureSelectedVisible(app: *App, body_rows: usize) void {
-    const visible_games = if (body_rows > 1) body_rows - 1 else 1;
+    const visible_games = if (body_rows > game_list_header_rows) body_rows - game_list_header_rows else min_visible_games;
     if (app.selected < app.scroll) app.scroll = app.selected;
     if (app.selected >= app.scroll + visible_games) app.scroll = app.selected - visible_games + 1;
 }
@@ -296,7 +330,7 @@ fn ensureSelectedVisible(app: *App, body_rows: usize) void {
 fn moveDown(app: *App, amount: usize) void {
     const count = app.filteredCount();
     if (count > 0) {
-        app.selected = @min(count - 1, app.selected + amount);
+        app.selected = @min(count - single_row_step, app.selected + amount);
     } else {
         app.scroll = @min(maxRawScroll(app), app.scroll + amount);
     }
@@ -311,16 +345,20 @@ fn moveUp(app: *App, amount: usize) void {
     }
 }
 
-fn visibleBodyRows() usize {
-    const rows = terminalRows();
-    return if (rows > 8) rows - 8 else 6;
+fn currentBodyRows(app: *const App) usize {
+    return bodyRows(terminalRows(), app.last_error != null);
+}
+
+fn bodyRows(rows: usize, has_error: bool) usize {
+    const reserved = footer_rows + if (has_error) error_rows else no_error_rows;
+    return if (rows > reserved + min_body_rows) rows - reserved else min_body_rows;
 }
 
 fn maxRawScroll(app: *const App) usize {
     const p = app.page orelse return 0;
     if (p.games.len > 0) return 0;
     const count = rawRenderableLineCount(p.visible_text);
-    const visible = visibleBodyRows();
+    const visible = currentBodyRows(app);
     return if (count > visible) count - visible else 0;
 }
 
@@ -339,13 +377,13 @@ fn rawRenderableLineCount(text: []const u8) usize {
 }
 
 fn timeoutFor(app: *const App) i32 {
-    if (!app.auto_refresh) return 1000;
+    if (!app.auto_refresh) return poll_tick_ms;
     const last = app.last_refresh_ms orelse return 0;
     const now = nowMs(app.io);
     const due = last + @as(i64, @intCast(app.refresh_interval_ms));
     if (now >= due) return 0;
     const delta = due - now;
-    if (delta > 1000) return 1000;
+    if (delta > poll_tick_ms) return poll_tick_ms;
     return @intCast(delta);
 }
 
@@ -370,6 +408,7 @@ fn render(app: *App) !void {
             \\enter      Open selected item
             \\b/esc      Back
             \\r          Refresh
+            \\o          Open in browser
             \\a          Toggle auto-refresh
             \\/          Filter
             \\d/u        Page down/up
@@ -379,25 +418,20 @@ fn render(app: *App) !void {
             \\Press ? or b to close.
             \\
         );
-        try writeStdout(app.io, aw.written());
+        try writeFrame(app.io, aw.written());
         return;
     }
 
     const rows = terminalRows();
     const page = app.page;
     if (page) |p| {
-        try w.print("{s}\n{s}\n", .{ p.title, app.current_url });
-        try renderMetaLine(w, app, p);
-        if (app.last_error) |err| try w.print("ERROR: {s}\n", .{err});
-        try w.writeAll("\n");
-        const used_before_body: usize = 5 + if (app.last_error != null) @as(usize, 1) else 0;
-        const footer_lines: usize = 2;
-        const body_budget = if (rows > used_before_body + footer_lines) rows - used_before_body - footer_lines else 6;
+        if (app.last_error) |err| try w.print("ERROR: {s}\n\n", .{err});
+        const body_budget = bodyRows(rows, app.last_error != null);
         if (p.games.len > 0) {
             ensureSelectedVisible(app, body_budget);
             try renderGames(w, app, p, body_budget);
         } else {
-            if (p.kind != .game) try w.writeAll("Could not parse structured games. Showing raw page text.\n");
+            if (p.kind == .game) try w.print("{s}\n\n", .{p.title}) else try w.writeAll("Could not parse structured games. Showing raw page text.\n");
             if (app.scroll > 0) try w.print("↑ {d} lines\n", .{app.scroll});
             try renderRawText(w, p.visible_text, app.scroll, body_budget);
         }
@@ -405,28 +439,78 @@ fn render(app: *App) !void {
         try w.writeAll("Plain Text Sports\nNo page loaded. Press r to retry.\n");
     }
 
-    try w.writeAll("\n");
-    if (app.filter.len > 0) try w.print("filter:{s} · ", .{app.filter});
-    try w.print("keys: j/k move · d/u page · enter open · r refresh · / filter · ? help · q quit\n", .{});
+    try padToFooter(w, aw.written(), rows);
+    try renderFooter(w, app, terminalCols());
 
-    try w.writeAll("\x1b[J");
-    try writeStdout(app.io, aw.written());
+    try writeFrame(app.io, aw.written());
 }
 
-fn renderMetaLine(w: *std.Io.Writer, app: *App, page: model.ParsedPage) !void {
-    if (page.data_loaded_at_text) |data| try w.print("data: {s}", .{cleanLoaded(data)}) else try w.writeAll("data: n/a");
+fn padToFooter(w: *std.Io.Writer, bytes: []const u8, rows: usize) !void {
+    const used = renderedLines(bytes);
+    if (used >= rows) return;
+    var n = rows - used - footer_rows;
+    while (n > 0) : (n -= 1) try w.writeByte('\n');
+}
+
+fn renderedLines(bytes: []const u8) usize {
+    if (bytes.len == 0) return 0;
+    var lines: usize = line_count_initial;
+    for (bytes) |b| {
+        if (b == '\n') lines += 1;
+    }
+    return lines;
+}
+
+fn renderFooter(w: *std.Io.Writer, app: *App, cols: usize) !void {
+    var meta_buf: [footer_meta_buf_len]u8 = undefined;
+    var meta_writer = std.Io.Writer.fixed(&meta_buf);
     if (app.last_refresh_ms) |ms| {
         const age_ms = nowMs(app.io) - ms;
-        try w.print(" · refreshed: {d}s ago", .{if (age_ms > 0) @divTrunc(age_ms, 1000) else 0});
+        try meta_writer.print("r:{d}s", .{if (age_ms > 0) @divTrunc(age_ms, ms_per_second_i64) else 0});
+    } else {
+        try meta_writer.writeAll("r:-");
     }
-    try w.print(" · auto: {s}/{d}s", .{ if (app.auto_refresh) "on" else "off", app.refresh_interval_ms / 1000 });
-    if (app.cached) try w.writeAll(" · offline cache");
-    try w.writeAll("\n");
+    try meta_writer.print(" auto:{s}/{d}s", .{ if (app.auto_refresh) "on" else "off", app.refresh_interval_ms / ms_per_second });
+    if (app.cached) try meta_writer.writeAll(" cache");
+    const meta = meta_writer.buffered();
+
+    const long_keys = if (app.filter.len > 0)
+        "j/k move · d/u page · enter open · o browser · r refresh · / filter · ? help · q quit"
+    else
+        "j/k move · d/u page · enter open · o browser · / filter · ? help · q quit";
+    const short_keys = "? help · q quit";
+    const keys = if (cols >= long_keys.len + meta.len + footer_gap_cols) long_keys else short_keys;
+    try writeFooterLine(w, cols, keys, meta);
 }
 
-fn cleanLoaded(line: []const u8) []const u8 {
-    if (std.mem.indexOfScalar(u8, line, ':')) |idx| return std.mem.trim(u8, line[idx + 1 ..], " \t\r");
-    return std.mem.trim(u8, line, " \t\r");
+fn writeFooterLine(w: *std.Io.Writer, cols: usize, keys: []const u8, meta: []const u8) !void {
+    try w.writeAll(keys);
+    if (cols > keys.len + meta.len) {
+        var spaces = cols - keys.len - meta.len;
+        while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
+    } else {
+        try w.writeByte(' ');
+    }
+    try w.writeAll(meta);
+}
+
+pub fn footerForTest(allocator: Allocator, cols: usize, keys: []const u8, meta: []const u8) ![]u8 {
+    var out = std.Io.Writer.Allocating.init(allocator);
+    errdefer out.deinit();
+    try writeFooterLine(&out.writer, cols, keys, meta);
+    return out.toOwnedSlice();
+}
+
+fn visibleGameRows(body_rows: usize) usize {
+    return if (body_rows > game_list_header_rows) body_rows - game_list_header_rows else 0;
+}
+
+pub fn visibleGameRowsForTest(body_rows: usize) usize {
+    return visibleGameRows(body_rows);
+}
+
+pub fn bodyRowsForTest(rows: usize, has_error: bool) usize {
+    return bodyRows(rows, has_error);
 }
 
 fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: usize) !void {
@@ -435,21 +519,18 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
     for (page.games) |game| {
         if (game.status == .live and app.matchesFilter(game)) any_live = true;
     }
-    var lines: usize = 0;
+    const capacity = visibleGameRows(max_lines);
+    var emitted: usize = 0;
     if (any_live) try w.writeAll("LIVE") else try w.writeAll("GAMES");
     if (app.scroll > 0) try w.print(" (↑{d})", .{app.scroll});
     try w.writeByte('\n');
-    lines += 1;
     for (page.games) |game| {
         if (!app.matchesFilter(game)) continue;
         if (filtered_index < app.scroll) {
             filtered_index += 1;
             continue;
         }
-        if (lines >= max_lines) {
-            try w.writeAll("...\n");
-            return;
-        }
+        if (emitted >= capacity) return;
         const selected = filtered_index == app.selected;
         const prefix = if (selected) "> " else "  ";
         const status_mark = switch (game.status) {
@@ -464,7 +545,7 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
         if (game.network) |n| try w.print(" · {s}", .{n});
         try w.writeAll("\n");
         filtered_index += 1;
-        lines += 1;
+        emitted += 1;
     }
     if (filtered_index == 0) try w.writeAll("No games match filter. Press / to change.\n");
 }
@@ -483,10 +564,7 @@ fn renderRawText(w: *std.Io.Writer, text: []const u8, scroll: usize, max_lines: 
             skipped += 1;
             continue;
         }
-        if (lines >= max_lines) {
-            try w.writeAll("...\n");
-            return;
-        }
+        if (lines >= max_lines) return;
         try w.print("{s}\n", .{line});
         lines += 1;
     }
@@ -505,9 +583,9 @@ fn promptFilter(io: std.Io, allocator: Allocator, old: []const u8) ![]u8 {
         const n = try std.Io.File.stdin().readStreaming(io, &.{&b});
         if (n == 0) continue;
         if (b[0] == '\r' or b[0] == '\n') break;
-        if (b[0] == 27) break;
-        if (b[0] == 127 or b[0] == 8) {
-            if (list.items.len > 0) list.shrinkRetainingCapacity(list.items.len - 1);
+        if (b[0] == escape_key) break;
+        if (b[0] == delete_key or b[0] == backspace_key) {
+            if (list.items.len > 0) list.shrinkRetainingCapacity(list.items.len - single_row_step);
             continue;
         }
         try list.append(allocator, b[0]);
@@ -520,19 +598,77 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return std.ascii.indexOfIgnoreCase(haystack, needle) != null;
 }
 
+fn openUrl(io: std.Io, url: []const u8) !void {
+    const builtin = @import("builtin");
+    const argv: []const []const u8 = switch (builtin.os.tag) {
+        .macos => &.{ "open", url },
+        .windows => &.{ "cmd", "/C", "start", "", url },
+        else => &.{ "xdg-open", url },
+    };
+    var child = try std.process.spawn(io, .{
+        .argv = argv,
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+        .create_no_window = builtin.os.tag == .windows,
+    });
+    _ = try child.wait(io);
+}
+
 fn nowMs(io: std.Io) i64 {
     return std.Io.Timestamp.now(io, .real).toMilliseconds();
 }
 
 fn terminalRows() usize {
+    const size = terminalSize();
+    return size.rows;
+}
+
+fn terminalCols() usize {
+    const size = terminalSize();
+    return size.cols;
+}
+
+const TermSize = struct { rows: usize, cols: usize };
+fn terminalSize() TermSize {
     if (@import("builtin").os.tag == .linux) {
         var ws: std.posix.winsize = undefined;
         const rc = std.os.linux.ioctl(std.posix.STDOUT_FILENO, std.os.linux.T.IOCGWINSZ, @intFromPtr(&ws));
-        if (rc == 0 and ws.row > 0) return ws.row;
+        return .{
+            .rows = if (rc == 0 and ws.row > 0) ws.row else fallback_terminal_rows,
+            .cols = if (rc == 0 and ws.col > 0) ws.col else fallback_terminal_cols,
+        };
     }
-    return 24;
+    return .{ .rows = fallback_terminal_rows, .cols = fallback_terminal_cols };
 }
 
 fn writeStdout(io: std.Io, bytes: []const u8) !void {
     try std.Io.File.stdout().writeStreamingAll(io, bytes);
+}
+
+fn writeFrame(io: std.Io, bytes: []const u8) !void {
+    var start: usize = 0;
+    for (bytes, 0..) |b, i| {
+        if (b != '\n') continue;
+        if (i > start) try writeStdout(io, bytes[start..i]);
+        try writeStdout(io, "\x1b[K\n");
+        start = i + 1;
+    }
+    if (start < bytes.len) try writeStdout(io, bytes[start..]);
+    try writeStdout(io, "\x1b[K\x1b[J");
+}
+
+pub fn frameForTest(allocator: Allocator, bytes: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    var start: usize = 0;
+    for (bytes, 0..) |b, i| {
+        if (b != '\n') continue;
+        if (i > start) try out.appendSlice(allocator, bytes[start..i]);
+        try out.appendSlice(allocator, "\x1b[K\n");
+        start = i + 1;
+    }
+    if (start < bytes.len) try out.appendSlice(allocator, bytes[start..]);
+    try out.appendSlice(allocator, "\x1b[K\x1b[J");
+    return out.toOwnedSlice(allocator);
 }

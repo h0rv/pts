@@ -34,6 +34,19 @@ pub fn build(b: *std.Build) void {
     });
     const run_parser_tests = b.addRunArtifact(parser_tests);
 
+    const ui_tests_mod = b.createModule(.{
+        .root_source_file = b.path("tests/ui_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ui_tests_mod.addImport("ui", b.createModule(.{ .root_source_file = b.path("src/ui.zig") }));
+
+    const ui_tests = b.addTest(.{
+        .root_module = ui_tests_mod,
+    });
+    const run_ui_tests = b.addRunArtifact(ui_tests);
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_parser_tests.step);
+    test_step.dependOn(&run_ui_tests.step);
 }

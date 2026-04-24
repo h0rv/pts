@@ -52,7 +52,8 @@ k/up       up
 d/space    page down
 u/PgUp     page up
 PgDn       page down
-enter      open
+enter      open item
+o          open item/page in browser
 b/esc      back
 r          refresh
 /          filter
