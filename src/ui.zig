@@ -3,6 +3,7 @@ const model = @import("model.zig");
 const http = @import("http.zig");
 const parser = @import("parser.zig");
 const cache = @import("cache.zig");
+const style = @import("style.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -72,8 +73,9 @@ const App = struct {
     help: bool = false,
     use_cache: bool,
     debug: bool,
+    color: bool,
 
-    fn init(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_root: []const u8, url: []const u8, refresh_seconds: u64, use_cache: bool, debug: bool) !App {
+    fn init(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_root: []const u8, url: []const u8, refresh_seconds: u64, use_cache: bool, debug: bool, color: bool) !App {
         return .{
             .allocator = allocator,
             .io = io,
@@ -84,6 +86,7 @@ const App = struct {
             .refresh_interval_ms = refresh_seconds * ms_per_second,
             .use_cache = use_cache,
             .debug = debug,
+            .color = color,
         };
     }
 
@@ -222,8 +225,8 @@ const App = struct {
     }
 };
 
-pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_root: []const u8, url: []const u8, refresh_seconds: u64, use_cache: bool, debug: bool) !void {
-    var app = try App.init(allocator, io, client, cache_root, url, refresh_seconds, use_cache, debug);
+pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_root: []const u8, url: []const u8, refresh_seconds: u64, use_cache: bool, debug: bool, color: bool) !void {
+    var app = try App.init(allocator, io, client, cache_root, url, refresh_seconds, use_cache, debug, color);
     defer app.deinit();
     app.load();
 
@@ -406,8 +409,8 @@ fn render(app: *App) !void {
     try w.writeAll("\x1b[H");
 
     if (app.help) {
+        try style.write(w, app.color, .header, "Plain Text Sports - Help");
         try w.writeAll(
-            \\Plain Text Sports - Help
             \\
             \\j/down     Move down
             \\k/up       Move up
@@ -431,18 +434,28 @@ fn render(app: *App) !void {
     const rows = terminalRows();
     const page = app.page;
     if (page) |p| {
-        if (app.last_error) |err| try w.print("ERROR: {s}\n\n", .{err});
+        if (app.last_error) |err| {
+            try style.write(w, app.color, .err, "ERROR");
+            try w.print(": {s}\n\n", .{err});
+        }
         const body_budget = bodyRows(rows, app.last_error != null);
         if (p.games.len > 0) {
             ensureSelectedVisible(app, body_budget);
             try renderGames(w, app, p, body_budget);
         } else {
-            if (p.kind == .game) try w.print("{s}\n\n", .{p.title}) else try w.writeAll("Could not parse structured games. Showing raw page text.\n");
-            if (app.scroll > 0) try w.print("↑ {d} lines\n", .{app.scroll});
+            if (p.kind == .game) {
+                try style.write(w, app.color, .title, p.title);
+                try w.writeAll("\n\n");
+            } else try w.writeAll("Could not parse structured games. Showing raw page text.\n");
+            if (app.scroll > 0) {
+                try style.write(w, app.color, .dim, "↑");
+                try w.print(" {d} lines\n", .{app.scroll});
+            }
             try renderRawText(w, p.visible_text, app.scroll, body_budget);
         }
     } else {
-        try w.writeAll("Plain Text Sports\nNo page loaded. Press r to retry.\n");
+        try style.write(w, app.color, .header, "Plain Text Sports");
+        try w.writeAll("\nNo page loaded. Press r to retry.\n");
     }
 
     try padToFooter(w, aw.written(), rows);
@@ -486,24 +499,24 @@ fn renderFooter(w: *std.Io.Writer, app: *App, cols: usize) !void {
         "j/k move · d/u page · enter open · o browser · / filter · ? help · q quit";
     const short_keys = "? help · q quit";
     const keys = if (cols >= long_keys.len + meta.len + footer_gap_cols) long_keys else short_keys;
-    try writeFooterLine(w, cols, keys, meta);
+    try writeFooterLine(w, app.color, cols, keys, meta);
 }
 
-fn writeFooterLine(w: *std.Io.Writer, cols: usize, keys: []const u8, meta: []const u8) !void {
-    try w.writeAll(keys);
+fn writeFooterLine(w: *std.Io.Writer, color: bool, cols: usize, keys: []const u8, meta: []const u8) !void {
+    try style.write(w, color, .footer, keys);
     if (cols > keys.len + meta.len) {
         var spaces = cols - keys.len - meta.len;
         while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
     } else {
         try w.writeByte(' ');
     }
-    try w.writeAll(meta);
+    try style.write(w, color, .footer, meta);
 }
 
 pub fn footerForTest(allocator: Allocator, cols: usize, keys: []const u8, meta: []const u8) ![]u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     errdefer out.deinit();
-    try writeFooterLine(&out.writer, cols, keys, meta);
+    try writeFooterLine(&out.writer, false, cols, keys, meta);
     return out.toOwnedSlice();
 }
 
@@ -527,7 +540,7 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
     }
     const capacity = visibleGameRows(max_lines);
     var emitted: usize = 0;
-    if (any_live) try w.writeAll("LIVE") else try w.writeAll("GAMES");
+    if (any_live) try style.write(w, app.color, .live, "LIVE") else try style.write(w, app.color, .header, "GAMES");
     if (app.scroll > 0) try w.print(" (↑{d})", .{app.scroll});
     try w.writeByte('\n');
     for (page.games) |game| {
@@ -539,31 +552,31 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
         if (emitted >= capacity) return;
         const selected = filtered_index == app.selected;
         const prefix = if (selected) "> " else "  ";
-        try renderGameLine(w, prefix, game);
+        try renderGameLine(w, app.color, prefix, game);
         filtered_index += 1;
         emitted += 1;
     }
     if (filtered_index == 0) try w.writeAll("No games match filter. Press / to change.\n");
 }
 
-fn renderGameLine(w: *std.Io.Writer, prefix: []const u8, game: model.Game) !void {
+fn renderGameLine(w: *std.Io.Writer, color: bool, prefix: []const u8, game: model.Game) !void {
     const league = if (game.sport == .unknown) "" else game.league_name;
     const status_mark = statusLabel(game.status);
     const parts = splitGameText(game.status_text);
 
-    try w.writeAll(prefix);
-    try writeCell(w, league, league_col_width);
+    try style.write(w, color, .selected, prefix);
+    try style.writeCell(w, color, .league, league, league_col_width);
     try w.writeAll(game_col_sep);
-    try writeCell(w, status_mark, status_col_width);
+    try style.writeCell(w, color, statusColor(game.status), status_mark, status_col_width);
     try w.writeAll(game_col_sep);
     try writeCell(w, game.title, matchup_col_width);
     try w.writeAll(game_col_sep);
-    try writeCell(w, parts.event, event_col_width);
+    try style.writeCell(w, color, .dim, parts.event, event_col_width);
     try w.writeAll(game_col_sep);
-    try writeTimeCell(w, parts.time, time_col_width);
+    try writeTimeCell(w, color, parts.time, time_col_width);
     if (game.network) |network| {
         try w.writeAll(game_col_sep);
-        try w.writeAll(network);
+        try style.write(w, color, .network, network);
     }
     try w.writeByte('\n');
 }
@@ -575,9 +588,10 @@ fn writeCell(w: *std.Io.Writer, value: []const u8, width: usize) !void {
     while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
 }
 
-fn writeTimeCell(w: *std.Io.Writer, value: []const u8, width: usize) !void {
+fn writeTimeCell(w: *std.Io.Writer, color: bool, value: []const u8, width: usize) !void {
     const extra = if (needsHourPadding(value)) @as(usize, 1) else 0;
     var written: usize = 0;
+    if (color) try w.writeAll("\x1b[33m");
     if (extra != 0 and written < width) {
         try w.writeByte('0');
         written += 1;
@@ -585,6 +599,7 @@ fn writeTimeCell(w: *std.Io.Writer, value: []const u8, width: usize) !void {
     const n = @min(value.len, width - written);
     try w.writeAll(value[0..n]);
     written += n;
+    if (color) try w.writeAll("\x1b[0m");
     var spaces = width - written;
     while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
 }
@@ -599,6 +614,16 @@ pub fn normalizeTimeForTest(allocator: Allocator, value: []const u8) ![]u8 {
     if (needsHourPadding(value)) try out.append(allocator, '0');
     try out.appendSlice(allocator, value);
     return out.toOwnedSlice(allocator);
+}
+
+fn statusColor(status: model.StatusKind) style.Kind {
+    return switch (status) {
+        .live => .live,
+        .upcoming => .up,
+        .final => .final,
+        .postponed => .postponed,
+        .unknown => .dim,
+    };
 }
 
 fn statusLabel(status: model.StatusKind) []const u8 {

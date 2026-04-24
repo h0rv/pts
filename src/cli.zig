@@ -9,6 +9,7 @@ pub const Options = struct {
     plain: bool = false,
     no_cache: bool = false,
     debug: bool = false,
+    color: bool = true,
     refresh_seconds: u64 = 15,
     help: bool = false,
     version: bool = false,
@@ -28,6 +29,10 @@ pub fn parseArgs(args: []const []const u8) CliError!Options {
             opts.no_cache = true;
         } else if (std.mem.eql(u8, arg, "--debug")) {
             opts.debug = true;
+        } else if (std.mem.eql(u8, arg, "--color")) {
+            opts.color = true;
+        } else if (std.mem.eql(u8, arg, "--no-color")) {
+            opts.color = false;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             opts.help = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
@@ -79,6 +84,8 @@ pub fn printHelp(writer: anytype) !void {
         \\  --no-cache            Disable cache fallback
         \\  --plain               Print text and exit
         \\  --debug               Print parser/network details to stderr
+        \\  --color               Enable ANSI colors (default)
+        \\  --no-color            Disable ANSI colors
         \\  --url <url>           Open Plain Text Sports URL/path
         \\  --version             Print version
         \\  --help                Print help

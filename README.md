@@ -70,6 +70,8 @@ G          bottom
 --no-cache            disable cache fallback
 --plain               print text and exit
 --debug               log parser/network details
+--color               enable ANSI colors (default)
+--no-color            disable ANSI colors
 --url <url>           open Plain Text Sports URL/path
 --version             print version
 --help                print help
@@ -116,3 +118,4 @@ Pushing tag `v*` builds GitHub release artifacts for:
 - Parser is heuristic, not a full HTML parser.
 - Cache fallback uses `$XDG_CACHE_HOME/pts`, `~/.cache/pts`, or `~/Library/Caches/pts`.
 - TUI is ANSI-based. Linux is tested; macOS and Windows cross-compile in CI.
+- Set `NO_COLOR=1` or pass `--no-color` to disable ANSI colors.

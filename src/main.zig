@@ -6,6 +6,7 @@ const http = @import("http.zig");
 const parser = @import("parser.zig");
 const cache = @import("cache.zig");
 const ui = @import("ui.zig");
+const style = @import("style.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -50,12 +51,13 @@ pub fn main(init: std.process.Init) !void {
     const cache_root = try cache.defaultDir(gpa, init.environ_map);
     defer gpa.free(cache_root);
 
+    const color = opts.color and init.environ_map.get("NO_COLOR") == null;
     if (opts.plain) {
-        try plain(io, gpa, &client, opts, cache_root, url);
+        try plain(io, gpa, &client, opts, cache_root, url, color);
         return;
     }
 
-    try ui.run(gpa, io, &client, cache_root, url, opts.refresh_seconds, !opts.no_cache, opts.debug);
+    try ui.run(gpa, io, &client, cache_root, url, opts.refresh_seconds, !opts.no_cache, opts.debug, color);
 }
 
 fn resolveUrl(allocator: std.mem.Allocator, client: *std.http.Client, opts: cli.Options) ![]u8 {
@@ -79,22 +81,22 @@ fn resolveUrl(allocator: std.mem.Allocator, client: *std.http.Client, opts: cli.
     return base;
 }
 
-fn plain(io: std.Io, allocator: std.mem.Allocator, client: *std.http.Client, opts: cli.Options, cache_root: []const u8, url: []const u8) !void {
+fn plain(io: std.Io, allocator: std.mem.Allocator, client: *std.http.Client, opts: cli.Options, cache_root: []const u8, url: []const u8, color: bool) !void {
     const body = http.fetchPage(allocator, client, url) catch |err| {
         if (!opts.no_cache) {
             if (cache.read(client.io, allocator, cache_root, url) catch null) |cached| {
                 defer allocator.free(cached);
-                return printParsed(io, allocator, url, cached);
+                return printParsed(io, allocator, url, cached, color);
             }
         }
         return err;
     };
     defer allocator.free(body);
     if (!opts.no_cache) cache.write(client.io, allocator, cache_root, url, body) catch |err| if (opts.debug) std.debug.print("cache write error: {any}\n", .{err});
-    try printParsed(io, allocator, url, body);
+    try printParsed(io, allocator, url, body, color);
 }
 
-fn printParsed(io: std.Io, allocator: std.mem.Allocator, url: []const u8, body: []const u8) !void {
+fn printParsed(io: std.Io, allocator: std.mem.Allocator, url: []const u8, body: []const u8, color: bool) !void {
     var parsed = try parser.parsePage(allocator, url, body);
     defer parsed.deinit(allocator);
 
@@ -102,11 +104,23 @@ fn printParsed(io: std.Io, allocator: std.mem.Allocator, url: []const u8, body: 
     var stdout = std.Io.File.stdout().writer(io, &stdout_buf);
     const w = &stdout.interface;
     if (parsed.games.len > 0) {
-        try w.print("{s}\n{s}\n\n", .{ parsed.title, parsed.url });
+        try style.write(w, color, .title, parsed.title);
+        try w.writeByte('\n');
+        try style.write(w, color, .dim, parsed.url);
+        try w.writeAll("\n\n");
         for (parsed.games) |game| {
-            try w.print("{s:<5} {s:<8} {s} — {s}", .{ game.league_name, @tagName(game.status), game.title, game.status_text });
-            if (game.network) |n| try w.print(" · {s}", .{n});
-            if (game.url) |u| try w.print(" · {s}", .{u});
+            try style.writeCell(w, color, .league, game.league_name, 5);
+            try w.writeByte(' ');
+            try style.writeCell(w, color, plainStatusStyle(game.status), @tagName(game.status), 8);
+            try w.print(" {s} — {s}", .{ game.title, game.status_text });
+            if (game.network) |n| {
+                try w.writeAll(" ");
+                try style.write(w, color, .network, n);
+            }
+            if (game.url) |u| {
+                try w.writeAll(" ");
+                try style.write(w, color, .dim, u);
+            }
             try w.writeAll("\n");
         }
     } else {
@@ -114,6 +128,16 @@ fn printParsed(io: std.Io, allocator: std.mem.Allocator, url: []const u8, body: 
         if (parsed.visible_text.len == 0 or parsed.visible_text[parsed.visible_text.len - 1] != '\n') try w.writeByte('\n');
     }
     try w.flush();
+}
+
+fn plainStatusStyle(status: model.StatusKind) style.Kind {
+    return switch (status) {
+        .live => .live,
+        .upcoming => .up,
+        .final => .final,
+        .postponed => .postponed,
+        .unknown => .dim,
+    };
 }
 
 fn printErr(io: std.Io, comptime fmt: []const u8, args: anytype) !void {
