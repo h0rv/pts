@@ -657,6 +657,48 @@ fn splitBeforeTimeZone(text: []const u8, zone_index: usize, suffix_len: usize) G
     return .{ .event = event, .time = time };
 }
 
+const LineupLine = struct {
+    kind: enum { header, columns, player, stats },
+    alt: bool = false,
+};
+
+const LineupState = struct {
+    active: bool = false,
+    row: usize = 0,
+    waiting_stats: bool = false,
+
+    fn classify(self: *LineupState, trimmed: []const u8) ?LineupLine {
+        if (isLineupHeader(trimmed)) {
+            self.active = true;
+            self.row = 0;
+            self.waiting_stats = false;
+            return .{ .kind = .header };
+        }
+        if (!self.active) return null;
+        if (trimmed.len == 0) return null;
+        if (isBattingHeader(trimmed)) {
+            self.waiting_stats = false;
+            return .{ .kind = .columns };
+        }
+        if (isLineupPlayer(trimmed)) {
+            self.waiting_stats = true;
+            return .{ .kind = .player, .alt = self.row % 2 == 1 };
+        }
+        if (isLineupStats(trimmed)) {
+            const alt = self.row % 2 == 1;
+            self.waiting_stats = false;
+            self.row += 1;
+            return .{ .kind = .stats, .alt = alt };
+        }
+        if (isSectionHeader(trimmed)) self.active = false;
+        return null;
+    }
+
+    fn skipBlank(self: *LineupState, trimmed: []const u8) bool {
+        return self.active and trimmed.len == 0;
+    }
+};
+
 fn renderRawLine(w: *std.Io.Writer, color: bool, line: []const u8) !void {
     const trimmed = std.mem.trim(u8, line, " \t\r");
     if (trimmed.len == 0) {
@@ -676,6 +718,22 @@ fn renderRawLine(w: *std.Io.Writer, color: bool, line: []const u8) !void {
     try w.writeByte('\n');
 }
 
+fn renderLineupLine(w: *std.Io.Writer, color: bool, line: []const u8, lineup: LineupLine) !void {
+    switch (lineup.kind) {
+        .header => try style.write(w, color, .header, line),
+        .columns => {
+            try w.writeAll("  ");
+            try style.write(w, color, .dim, line);
+        },
+        .player => try style.write(w, color, if (lineup.alt) .lineup_alt_player else .lineup_player, line),
+        .stats => {
+            try w.writeAll("  ");
+            try style.write(w, color, if (lineup.alt) .lineup_alt_stats else .lineup_stats, line);
+        },
+    }
+    try w.writeByte('\n');
+}
+
 fn writeInlineTime(w: *std.Io.Writer, color: bool, value: []const u8) !void {
     if (color) try w.writeAll("\x1b[33m");
     if (needsHourPadding(value)) try w.writeByte('0');
@@ -689,6 +747,25 @@ fn rawLineStyle(line: []const u8) ?style.Kind {
     if (isSectionHeader(line)) return .header;
     if (std.mem.indexOf(u8, line, " vs. ") != null and std.mem.indexOf(u8, line, " | ") != null) return .title;
     return null;
+}
+
+fn isLineupHeader(line: []const u8) bool {
+    return std.mem.endsWith(u8, line, " Lineup:") or std.mem.endsWith(u8, line, " Lineups:") or std.mem.eql(u8, line, "Probable Lineups:");
+}
+
+fn isBattingHeader(line: []const u8) bool {
+    return std.mem.startsWith(u8, line, "AVG") and std.mem.indexOf(u8, line, "OBP") != null and std.mem.indexOf(u8, line, "SLG") != null;
+}
+
+fn isLineupPlayer(line: []const u8) bool {
+    if (line.len < 3 or !std.ascii.isDigit(line[0])) return false;
+    var i: usize = 1;
+    while (i < line.len and std.ascii.isDigit(line[i])) : (i += 1) {}
+    return i < line.len and line[i] == ' ';
+}
+
+fn isLineupStats(line: []const u8) bool {
+    return line.len >= 2 and line[0] == '.' and std.ascii.isDigit(line[1]);
 }
 
 fn isTimeText(line: []const u8) bool {
@@ -731,20 +808,30 @@ fn renderRawText(w: *std.Io.Writer, color: bool, text: []const u8, scroll: usize
     var lines: usize = 0;
     var skipped: usize = 0;
     var started = false;
+    var lineup_state: LineupState = .{};
     var it = std.mem.splitScalar(u8, text, '\n');
     while (it.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (std.mem.startsWith(u8, trimmed, "Page loaded:") or std.mem.startsWith(u8, trimmed, "Data loaded:")) continue;
         if (!started and trimmed.len == 0) continue;
         started = true;
+        const lineup = lineup_state.classify(trimmed);
+        if (lineup_state.skipBlank(trimmed)) continue;
         if (skipped < scroll) {
             skipped += 1;
             continue;
         }
         if (lines >= max_lines) return;
-        try renderRawLine(w, color, line);
+        if (lineup) |l| try renderLineupLine(w, color, trimmed, l) else try renderRawLine(w, color, line);
         lines += 1;
     }
+}
+
+pub fn rawTextForTest(allocator: Allocator, color: bool, text: []const u8) ![]u8 {
+    var out = std.Io.Writer.Allocating.init(allocator);
+    errdefer out.deinit();
+    try renderRawText(&out.writer, color, text, 0, 1000);
+    return out.toOwnedSlice();
 }
 
 fn promptFilter(io: std.Io, allocator: Allocator, old: []const u8) ![]u8 {

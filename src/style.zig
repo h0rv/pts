@@ -14,6 +14,10 @@ pub const Kind = enum {
     network,
     footer,
     err,
+    lineup_player,
+    lineup_stats,
+    lineup_alt_player,
+    lineup_alt_stats,
 };
 
 const reset = "\x1b[0m";
@@ -33,6 +37,10 @@ fn code(kind: Kind) []const u8 {
         .network => "\x1b[35m",
         .footer => "\x1b[2m",
         .err => "\x1b[1;31m",
+        .lineup_player => "\x1b[37m",
+        .lineup_stats => "\x1b[2m",
+        .lineup_alt_player => "\x1b[48;5;236;37m",
+        .lineup_alt_stats => "\x1b[48;5;236;2m",
     };
 }
 

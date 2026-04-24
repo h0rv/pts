@@ -52,6 +52,45 @@ test "raw game detail colors section and time" {
     try std.testing.expect(std.mem.indexOf(u8, game_time, "07:15 PM ET") != null);
 }
 
+test "lineup rendering compacts player stat pairs" {
+    const input =
+        \\Phillies Lineup:
+        \\AVG   R   H  HR RBI  BB   K  SB  OBP   SLG
+        \\
+        \\1 Trea Turner SS
+        \\
+        \\.225  14  23   2   7   9  21   3 .288  .333
+        \\
+        \\2 Kyle Schwarber DH
+        \\
+        \\.198  15  18   8  15  16  38   0 .342  .505
+    ;
+    const rendered = try ui.rawTextForTest(std.testing.allocator, false, input);
+    defer std.testing.allocator.free(rendered);
+    try std.testing.expectEqualStrings(
+        "Phillies Lineup:\n" ++
+            "  AVG   R   H  HR RBI  BB   K  SB  OBP   SLG\n" ++
+            "1 Trea Turner SS\n" ++
+            "  .225  14  23   2   7   9  21   3 .288  .333\n" ++
+            "2 Kyle Schwarber DH\n" ++
+            "  .198  15  18   8  15  16  38   0 .342  .505\n",
+        rendered,
+    );
+}
+
+test "lineup rendering supports zebra colors" {
+    const rendered = try ui.rawTextForTest(std.testing.allocator, true,
+        \\Phillies Lineup:
+        \\AVG   R   H  HR RBI  BB   K  SB  OBP   SLG
+        \\1 Trea Turner SS
+        \\.225  14  23   2   7   9  21   3 .288  .333
+        \\2 Kyle Schwarber DH
+        \\.198  15  18   8  15  16  38   0 .342  .505
+    );
+    defer std.testing.allocator.free(rendered);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "\x1b[48;5;236") != null);
+}
+
 test "body budget reserves footer row" {
     const body_rows = ui.bodyRowsForTest(small_terminal_rows, false);
     try std.testing.expectEqual(small_terminal_rows - footer_row_count, body_rows);
