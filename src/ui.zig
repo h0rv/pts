@@ -29,6 +29,7 @@ const status_col_width: usize = 5;
 const matchup_col_width: usize = 9;
 const event_col_width: usize = 4;
 const time_col_width: usize = 11;
+const game_col_sep = "  ";
 
 const RawMode = struct {
     active: bool = false,
@@ -552,15 +553,18 @@ fn renderGameLine(w: *std.Io.Writer, prefix: []const u8, game: model.Game) !void
 
     try w.writeAll(prefix);
     try writeCell(w, league, league_col_width);
-    try w.writeByte(' ');
+    try w.writeAll(game_col_sep);
     try writeCell(w, status_mark, status_col_width);
-    try w.writeByte(' ');
+    try w.writeAll(game_col_sep);
     try writeCell(w, game.title, matchup_col_width);
-    try w.writeByte(' ');
+    try w.writeAll(game_col_sep);
     try writeCell(w, parts.event, event_col_width);
-    try w.writeByte(' ');
+    try w.writeAll(game_col_sep);
     try writeTimeCell(w, parts.time, time_col_width);
-    if (game.network) |network| try w.print(" {s}", .{network});
+    if (game.network) |network| {
+        try w.writeAll(game_col_sep);
+        try w.writeAll(network);
+    }
     try w.writeByte('\n');
 }
 
