@@ -119,6 +119,12 @@ test "lineup rendering supports zebra colors" {
     try std.testing.expect(std.mem.indexOf(u8, rendered, "\x1b[48;5;236") != null);
 }
 
+test "date header extracts dated urls" {
+    try std.testing.expectEqualStrings("2026-04-24", ui.dateFromUrlForTest("https://plaintextsports.com/all/2026-04-24/").?);
+    try std.testing.expectEqualStrings("2026-04-24", ui.dateFromUrlForTest("https://plaintextsports.com/nba/2026-04-24/").?);
+    try std.testing.expect(ui.dateFromUrlForTest("https://plaintextsports.com/") == null);
+}
+
 test "date links ignore all-scores back link" {
     const links = [_]ui.DateLinkForTest{
         .{ .href = "https://plaintextsports.com/mlb/", .text = "< All MLB Scores" },

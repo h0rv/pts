@@ -6,6 +6,7 @@ pub const Options = struct {
     sport: model.Sport = .all,
     shortcut: ?[]const u8 = null,
     url: ?[]const u8 = null,
+    date: ?[]const u8 = null,
     plain: bool = false,
     no_cache: bool = false,
     debug: bool = false,
@@ -15,7 +16,7 @@ pub const Options = struct {
     version: bool = false,
 };
 
-pub const CliError = error{ UnknownArgument, MissingValue, InvalidRefresh };
+pub const CliError = error{ UnknownArgument, MissingValue, InvalidRefresh, InvalidDate };
 
 pub fn parseArgs(args: []const []const u8) CliError!Options {
     var opts: Options = .{};
@@ -46,6 +47,11 @@ pub fn parseArgs(args: []const []const u8) CliError!Options {
             i += 1;
             if (i >= args.len) return error.MissingValue;
             opts.url = args[i];
+        } else if (std.mem.eql(u8, arg, "--date")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            if (!isDate(args[i])) return error.InvalidDate;
+            opts.date = args[i];
         } else if (std.mem.startsWith(u8, arg, "--")) {
             return error.UnknownArgument;
         } else {
@@ -67,6 +73,16 @@ pub fn parseArgs(args: []const []const u8) CliError!Options {
     return opts;
 }
 
+fn isDate(value: []const u8) bool {
+    if (value.len != "YYYY-MM-DD".len) return false;
+    for (value, 0..) |c, i| {
+        if (i == 4 or i == 7) {
+            if (c != '-') return false;
+        } else if (!std.ascii.isDigit(c)) return false;
+    }
+    return true;
+}
+
 pub fn printHelp(writer: anytype) !void {
     try writer.print(
         \\pts - terminal UI for Plain Text Sports
@@ -75,6 +91,7 @@ pub fn printHelp(writer: anytype) !void {
         \\  pts [sport] [schedule|standings|teams]
         \\  pts --plain
         \\  pts nba --plain
+        \\  pts --date YYYY-MM-DD
         \\  pts --url <url>
         \\
         \\Sports: live all mlb nba nhl nfl ncaaf ncaamb wnba soccer
@@ -86,6 +103,7 @@ pub fn printHelp(writer: anytype) !void {
         \\  --debug               Print parser/network details to stderr
         \\  --color               Enable ANSI colors (default)
         \\  --no-color            Disable ANSI colors
+        \\  --date YYYY-MM-DD     Open scores for a date
         \\  --url <url>           Open Plain Text Sports URL/path
         \\  --version             Print version
         \\  --help                Print help

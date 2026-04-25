@@ -24,6 +24,14 @@ pub fn pathForSport(sport: model.Sport) []const u8 {
     return "/";
 }
 
+pub fn datedPath(allocator: std.mem.Allocator, sport: model.Sport, date: []const u8) ![]u8 {
+    if (sport == .all) return std.fmt.allocPrint(allocator, "/all/{s}/", .{date});
+    const path = pathForSport(sport);
+    const slug = std.mem.trim(u8, path, "/");
+    if (slug.len == 0) return std.fmt.allocPrint(allocator, "/all/{s}/", .{date});
+    return std.fmt.allocPrint(allocator, "/{s}/{s}/", .{ slug, date });
+}
+
 pub fn absoluteUrl(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     if (std.mem.startsWith(u8, input, "http://") or std.mem.startsWith(u8, input, "https://")) {
         return allocator.dupe(u8, input);

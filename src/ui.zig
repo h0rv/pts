@@ -566,6 +566,10 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
     const capacity = visibleGameRows(max_lines);
     var emitted: usize = 0;
     if (any_live) try style.write(w, app.color, .live, "LIVE") else try style.write(w, app.color, .header, "GAMES");
+    if (dateFromUrl(page.url)) |date| {
+        try w.writeAll("  ");
+        try style.write(w, app.color, .dim, date);
+    }
     if (app.scroll > 0) try w.print(" (↑{d})", .{app.scroll});
     try w.writeByte('\n');
     for (page.games) |game| {
@@ -699,6 +703,29 @@ fn statusLabel(status: model.StatusKind) []const u8 {
         .postponed => "PPD",
         .unknown => "",
     };
+}
+
+fn dateFromUrl(url: []const u8) ?[]const u8 {
+    var i: usize = 0;
+    while (i + "YYYY-MM-DD".len <= url.len) : (i += 1) {
+        const part = url[i .. i + "YYYY-MM-DD".len];
+        if (isDateText(part)) return part;
+    }
+    return null;
+}
+
+fn isDateText(value: []const u8) bool {
+    if (value.len != "YYYY-MM-DD".len) return false;
+    for (value, 0..) |c, i| {
+        if (i == 4 or i == 7) {
+            if (c != '-') return false;
+        } else if (!std.ascii.isDigit(c)) return false;
+    }
+    return true;
+}
+
+pub fn dateFromUrlForTest(url: []const u8) ?[]const u8 {
+    return dateFromUrl(url);
 }
 
 const DateDir = enum { prev, next };

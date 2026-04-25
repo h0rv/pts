@@ -63,7 +63,9 @@ pub fn main(init: std.process.Init) !void {
 fn resolveUrl(allocator: std.mem.Allocator, client: *std.http.Client, opts: cli.Options) ![]u8 {
     if (opts.url) |u| return routes.absoluteUrl(allocator, u);
 
-    const base = try routes.absoluteUrl(allocator, routes.pathForSport(opts.sport));
+    const path = if (opts.date) |date| try routes.datedPath(allocator, opts.sport, date) else try allocator.dupe(u8, routes.pathForSport(opts.sport));
+    defer allocator.free(path);
+    const base = try routes.absoluteUrl(allocator, path);
     errdefer allocator.free(base);
 
     if (opts.shortcut) |shortcut| {

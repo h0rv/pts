@@ -40,6 +40,8 @@ pts nba schedule
 pts nhl standings
 pts --plain
 pts nba --plain
+pts --date 2026-04-24
+pts nba --date 2026-04-24 --plain
 pts --url /mlb/2026-04-24/phi-atl
 ```
 
@@ -72,6 +74,7 @@ G          bottom
 --no-cache            disable cache fallback
 --plain               print text and exit
 --debug               log parser/network details
+--date YYYY-MM-DD     open scores for a date
 --color               enable ANSI colors (default)
 --no-color            disable ANSI colors
 --url <url>           open Plain Text Sports URL/path
