@@ -22,7 +22,9 @@ case "$arch" in
 esac
 
 asset="pts-${arch}-${os}.tar.gz"
-if [ "$version" = "latest" ]; then
+if [ "${PTS_ARCHIVE_URL:-}" ]; then
+  url="$PTS_ARCHIVE_URL"
+elif [ "$version" = "latest" ]; then
   url="https://github.com/$repo/releases/latest/download/$asset"
 else
   url="https://github.com/$repo/releases/download/$version/$asset"

@@ -40,10 +40,13 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
+      - run: sha256sum dist/* > dist/SHA256SUMS
+      - run: ./scripts/generate-homebrew-formula.sh ${{ github.ref_name }} dist > dist/pts.rb
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

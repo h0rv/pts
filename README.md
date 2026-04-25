@@ -1,12 +1,12 @@
 # pts
 
-A sports scores CLI and TUI, powered by [Plain Text Sports](https://plaintextsports.com), written in Zig.
+Sports scores in your terminal, powered by [Plain Text Sports](https://plaintextsports.com).
 
 ![demo](assets/demo.gif)
 
 ## Install
 
-Linux/macOS release install:
+Linux/macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/h0rv/pts/main/scripts/install.sh | sh
@@ -23,7 +23,7 @@ mise exec -- zig build -Doptimize=ReleaseFast --prefix ~/.local
 pts
 ```
 
-Without mise, install Zig 0.16.0 and run:
+Without mise, install Zig 0.16.0 first:
 
 ```sh
 zig build -Doptimize=ReleaseFast --prefix ~/.local
@@ -32,83 +32,76 @@ zig build -Doptimize=ReleaseFast --prefix ~/.local
 ## Usage
 
 ```sh
-pts
-pts nba
-pts nhl
-pts mlb
-pts nba schedule
-pts nhl standings
-pts --plain
-pts nba --plain
-pts --date 2026-04-24
-pts nba --date 2026-04-24 --plain
+pts                         # TUI, all sports
+pts nba                     # TUI, NBA
+pts mlb --plain             # print and exit
+pts --date 2026-04-24       # scores for a date
+pts nba --date 2026-04-24   # sport + date
 pts --url /mlb/2026-04-24/phi-atl
 ```
 
 ## Keys
 
 ```text
-q          quit
-j/down     down
-k/up       up
-d/space    page down
-u/PgUp     page up
-PgDn       page down
-h/left     previous day
-l/right    next day
-enter      open item
-o          open item/page in browser
-b/esc      back
-r          refresh
-/          filter
-a          toggle auto refresh
-?          help
-g          top
-G          bottom
+j/k, arrows       move
+h/l, left/right   previous/next day
+d/u, space/PgUp   page
+enter             open game
+o                 open in browser
+/                 filter
+r                 refresh
+a                 toggle auto-refresh
+b/esc             back
+?                 help
+q                 quit
 ```
 
 ## Flags
 
 ```text
+--date YYYY-MM-DD     open scores for a date
+--plain               print text and exit
 --refresh <seconds>   auto-refresh interval (default: 15)
 --no-cache            disable cache fallback
---plain               print text and exit
---debug               log parser/network details
---date YYYY-MM-DD     open scores for a date
 --color               enable ANSI colors (default)
 --no-color            disable ANSI colors
 --url <url>           open Plain Text Sports URL/path
+--debug               log parser/network details
 --version             print version
 --help                print help
 ```
 
-## Demo GIF
+`NO_COLOR=1` also disables colors.
 
-Uses [VHS](https://github.com/charmbracelet/vhs).
+## Homebrew
+
+Release builds include a generated `pts.rb` formula. After a release:
 
 ```sh
-mise install
-./scripts/record-demo.sh
+brew install https://github.com/h0rv/pts/releases/latest/download/pts.rb
 ```
 
-Writes `assets/demo.gif`.
+For a tap, copy that formula into `h0rv/homebrew-tap/Formula/pts.rb`.
 
 ## Development
 
 ```sh
 mise install
 mise exec -- zig build test
-mise exec -- zig build -Doptimize=ReleaseFast --prefix ~/.local
-mise exec -- zig build -Dtarget=x86_64-linux
-mise exec -- zig build -Dtarget=aarch64-linux
-mise exec -- zig build -Dtarget=x86_64-macos
-mise exec -- zig build -Dtarget=aarch64-macos
-mise exec -- zig build -Dtarget=x86_64-windows
+mise exec -- zig build
 ```
 
-## Releases
+Useful release checks:
 
-Pushing tag `v*` builds GitHub release artifacts for:
+```sh
+OPTIMIZE=Debug ./scripts/package-release.sh x86_64-linux
+PREFIX=/tmp/pts-install PTS_ARCHIVE_URL="file://$PWD/dist/pts-x86_64-linux.tar.gz" ./scripts/install.sh
+/tmp/pts-install/bin/pts --version
+```
+
+## Release
+
+Pushing tag `v*` builds:
 
 - `x86_64-linux`
 - `aarch64-linux`
@@ -116,11 +109,12 @@ Pushing tag `v*` builds GitHub release artifacts for:
 - `aarch64-macos`
 - `x86_64-windows`
 
+Release assets also include `SHA256SUMS` and `pts.rb`.
+
 ## Notes
 
-- Uses Plain Text Sports public pages.
+- Uses public Plain Text Sports pages.
 - Not affiliated with Plain Text Sports.
 - Parser is heuristic, not a full HTML parser.
-- Cache fallback uses `$XDG_CACHE_HOME/pts`, `~/.cache/pts`, or `~/Library/Caches/pts`.
-- TUI is ANSI-based. Linux is tested; macOS and Windows cross-compile in CI.
-- Set `NO_COLOR=1` or pass `--no-color` to disable ANSI colors.
+- Cache lives in `$XDG_CACHE_HOME/pts`, `~/.cache/pts`, or `~/Library/Caches/pts`.
+- TUI is ANSI-based.

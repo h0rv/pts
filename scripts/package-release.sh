@@ -9,7 +9,8 @@ root="dist/${name}"
 rm -rf dist
 mkdir -p "$root"
 
-zig build -Dtarget="$target" -Doptimize=ReleaseFast
+optimize="${OPTIMIZE:-ReleaseFast}"
+zig build -Dtarget="$target" -Doptimize="$optimize"
 
 bin="zig-out/bin/pts"
 if [[ "$target" == *windows* ]]; then
