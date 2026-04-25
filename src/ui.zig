@@ -30,6 +30,8 @@ const status_col_width: usize = 5;
 const matchup_col_width: usize = 9;
 const event_col_width: usize = 4;
 const time_col_width: usize = 11;
+const score_col_width: usize = 11;
+const score_header_indent = "      ";
 const game_col_sep = "  ";
 
 const RawMode = struct {
@@ -585,7 +587,7 @@ fn renderGames(w: *std.Io.Writer, app: *App, page: model.ParsedPage, max_lines: 
 fn renderGameLine(w: *std.Io.Writer, color: bool, prefix: []const u8, game: model.Game) !void {
     const league = if (game.sport == .unknown) "" else game.league_name;
     const status_mark = statusLabel(game.status);
-    const parts = splitGameText(game.status_text);
+    const parts = splitGameText(game.status_text, game.status);
 
     try style.write(w, color, .selected, prefix);
     try style.writeCell(w, color, .league, league, league_col_width);
@@ -596,7 +598,7 @@ fn renderGameLine(w: *std.Io.Writer, color: bool, prefix: []const u8, game: mode
     try w.writeAll(game_col_sep);
     try style.writeCell(w, color, .dim, parts.event, event_col_width);
     try w.writeAll(game_col_sep);
-    try writeTimeCell(w, color, parts.time, time_col_width);
+    if (!try writeScoreCell(w, color, game, score_col_width)) try writeTimeCell(w, color, parts.time, time_col_width);
     if (game.network) |network| {
         try w.writeAll(game_col_sep);
         try style.write(w, color, .network, network);
@@ -609,6 +611,46 @@ fn writeCell(w: *std.Io.Writer, value: []const u8, width: usize) !void {
     try w.writeAll(value[0..n]);
     var spaces = width - n;
     while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
+}
+
+fn writeScoreCell(w: *std.Io.Writer, color: bool, game: model.Game, width: usize) !bool {
+    if (game.away == null or game.home == null) return false;
+    const away_score = trailingScore(game.away.?) orelse return false;
+    const home_score = trailingScore(game.home.?) orelse return false;
+    var written: usize = 0;
+    if (color) try w.writeAll("\x1b[1m");
+    const away_n = @min(away_score.len, width);
+    try w.writeAll(away_score[0..away_n]);
+    written += away_n;
+    if (written < width) {
+        try w.writeByte('-');
+        written += 1;
+    }
+    const home_n = @min(home_score.len, width - written);
+    try w.writeAll(home_score[0..home_n]);
+    written += home_n;
+    if (color) try w.writeAll("\x1b[0m");
+    var spaces = width - written;
+    while (spaces > 0) : (spaces -= 1) try w.writeByte(' ');
+    return true;
+}
+
+fn trailingScore(line: []const u8) ?[]const u8 {
+    var t = std.mem.trim(u8, line, " \t");
+    if (t.len == 0) return null;
+    while (t.len > 0 and std.ascii.isWhitespace(t[t.len - 1])) t = t[0 .. t.len - 1];
+    var start = t.len;
+    while (start > 0 and !std.ascii.isWhitespace(t[start - 1])) start -= 1;
+    const score = t[start..];
+    if (score.len == 0) return null;
+    for (score) |c| if (!std.ascii.isDigit(c)) return null;
+    return score;
+}
+
+pub fn finalScoreForTest(allocator: Allocator, away: []const u8, home: []const u8) !?[]u8 {
+    const away_score = trailingScore(away) orelse return null;
+    const home_score = trailingScore(home) orelse return null;
+    return try std.fmt.allocPrint(allocator, "{s}-{s}", .{ away_score, home_score });
 }
 
 fn writeTimeCell(w: *std.Io.Writer, color: bool, value: []const u8, width: usize) !void {
@@ -702,11 +744,22 @@ const GameTextParts = struct {
     time: []const u8,
 };
 
-fn splitGameText(text: []const u8) GameTextParts {
+fn splitGameText(text: []const u8, status: model.StatusKind) GameTextParts {
     const t = std.mem.trim(u8, text, " \t");
     if (std.mem.indexOf(u8, t, " PM")) |pm| return splitBeforeTimeZone(t, pm, " PM ET".len);
     if (std.mem.indexOf(u8, t, " AM")) |am| return splitBeforeTimeZone(t, am, " AM ET".len);
+    if (status == .final) return splitFinalText(t);
     return .{ .event = "", .time = t };
+}
+
+fn splitFinalText(text: []const u8) GameTextParts {
+    if (std.ascii.indexOfIgnoreCase(text, "Final")) |idx| {
+        return .{ .event = std.mem.trim(u8, text[0..idx], " \t"), .time = "" };
+    }
+    if (std.ascii.indexOfIgnoreCase(text, "FT")) |idx| {
+        return .{ .event = std.mem.trim(u8, text[0..idx], " \t"), .time = "" };
+    }
+    return .{ .event = "", .time = text };
 }
 
 fn splitBeforeTimeZone(text: []const u8, zone_index: usize, suffix_len: usize) GameTextParts {
@@ -766,6 +819,19 @@ fn renderRawLine(w: *std.Io.Writer, color: bool, line: []const u8) !void {
         try w.writeByte('\n');
         return;
     }
+    if (isJoinedFinalScore(trimmed)) {
+        try style.write(w, color, .final, "Final");
+        try w.writeByte(' ');
+        try w.writeAll(trimmed["Final".len..]);
+        try w.writeByte('\n');
+        return;
+    }
+    if (isScoreHeader(trimmed)) {
+        try style.write(w, color, .dim, score_header_indent);
+        try style.write(w, color, .dim, trimmed);
+        try w.writeByte('\n');
+        return;
+    }
     if (isTimeText(trimmed)) {
         try writeInlineTime(w, color, trimmed);
         try w.writeByte('\n');
@@ -803,11 +869,15 @@ fn writeInlineTime(w: *std.Io.Writer, color: bool, value: []const u8) !void {
 }
 
 fn rawLineStyle(line: []const u8) ?style.Kind {
-    if (isRuleLine(line) or isScoreHeader(line)) return .dim;
+    if (isRuleLine(line)) return .dim;
     if (isTeamScoreRow(line)) return .league;
     if (isSectionHeader(line)) return .header;
     if (std.mem.indexOf(u8, line, " vs. ") != null and std.mem.indexOf(u8, line, " | ") != null) return .title;
     return null;
+}
+
+fn isJoinedFinalScore(line: []const u8) bool {
+    return line.len > "Final0".len and std.mem.startsWith(u8, line, "Final") and std.ascii.isDigit(line["Final".len]);
 }
 
 fn isLineupHeader(line: []const u8) bool {

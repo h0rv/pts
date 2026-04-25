@@ -25,6 +25,16 @@ test "frame output clears tail for unterminated last line" {
     try std.testing.expectEqualStrings("header" ++ clear_line ++ newline ++ "short" ++ clear_line ++ clear_rest, frame);
 }
 
+test "final score extracts from team lines" {
+    const score = (try ui.finalScoreForTest(std.testing.allocator, "2 BOS 2W   108", "7 PHI 1W   100")).?;
+    defer std.testing.allocator.free(score);
+    try std.testing.expectEqualStrings("108-100", score);
+
+    const baseball = (try ui.finalScoreForTest(std.testing.allocator, "PHI   0  0  2    3", "ATL   0  0  x    5")).?;
+    defer std.testing.allocator.free(baseball);
+    try std.testing.expectEqualStrings("3-5", baseball);
+}
+
 test "time normalization pads one-digit hours" {
     const early = try ui.normalizeTimeForTest(std.testing.allocator, "7:00 PM ET");
     defer std.testing.allocator.free(early);
@@ -33,6 +43,18 @@ test "time normalization pads one-digit hours" {
     const late = try ui.normalizeTimeForTest(std.testing.allocator, "10:30 PM ET");
     defer std.testing.allocator.free(late);
     try std.testing.expectEqualStrings("10:30 PM ET", late);
+}
+
+test "joined final score gets readable space" {
+    const line = try ui.rawLineForTest(std.testing.allocator, false, "Final3 - 5");
+    defer std.testing.allocator.free(line);
+    try std.testing.expectEqualStrings("Final 3 - 5\n", line);
+}
+
+test "score header keeps team-column indent" {
+    const line = try ui.rawLineForTest(std.testing.allocator, false, "      1  2  3  4  5  6  7  8  9    T  H  E");
+    defer std.testing.allocator.free(line);
+    try std.testing.expectEqualStrings("      1  2  3  4  5  6  7  8  9    T  H  E\n", line);
 }
 
 test "raw game detail trims edge whitespace" {

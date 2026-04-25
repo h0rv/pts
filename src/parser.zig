@@ -195,6 +195,8 @@ fn isNoiseLine(line: []const u8) bool {
     if (t.len == 0) return false;
     if (std.mem.eql(u8, t, "Dark ModeLight Mode")) return true;
     if (std.mem.startsWith(u8, t, "< All ")) return true;
+    if (std.mem.startsWith(u8, t, "< ") and std.mem.indexOf(u8, t, " Scores") != null) return true;
+    if (std.mem.eql(u8, t, "Play-by-Play   Box Score")) return true;
     if (std.mem.eql(u8, t, "Probable Pitchers")) return true;
     if (std.mem.indexOf(u8, t, "plaintextsports.com | Mobile App") != null) return true;
     if (std.mem.indexOf(u8, t, "Twitter | Instagram | Twitch") != null) return true;
@@ -408,7 +410,7 @@ fn firstMeaningfulTitle(allocator: Allocator, block: []const u8) ![]const u8 {
 pub fn detectStatus(status_line: []const u8, block: []const u8) model.StatusKind {
     const hay = if (status_line.len > 0) status_line else block;
     if (std.ascii.indexOfIgnoreCase(hay, "Postponed") != null) return .postponed;
-    if (std.ascii.indexOfIgnoreCase(hay, "Final") != null) return .final;
+    if (std.ascii.indexOfIgnoreCase(hay, "Final") != null or std.ascii.indexOfIgnoreCase(hay, "FT") != null) return .final;
     if (looksUpcoming(hay)) return .upcoming;
     const live_terms = [_][]const u8{ "Top", "Bottom", "Mid", "End", "Q1", "Q2", "Q3", "Q4", "OT", "1st", "2nd", "3rd", "Period", "Half", "live", "In Progress" };
     for (live_terms) |term| if (std.ascii.indexOfIgnoreCase(hay, term) != null) return .live;
