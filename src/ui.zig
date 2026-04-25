@@ -175,6 +175,21 @@ const App = struct {
         return containsIgnoreCase(game.title, self.filter) or containsIgnoreCase(game.status_text, self.filter) or containsIgnoreCase(game.league_name, self.filter);
     }
 
+    fn openUrlInPlace(self: *App, url: []const u8) void {
+        const next = self.allocator.dupe(u8, url) catch return;
+        self.allocator.free(self.current_url);
+        self.current_url = next;
+        self.selected = 0;
+        self.scroll = 0;
+        self.load();
+    }
+
+    fn navigateDay(self: *App, dir: DateDir) void {
+        const page = self.page orelse return;
+        const url = dateLink(page.links, dir) orelse return;
+        self.openUrlInPlace(url);
+    }
+
     fn openSelected(self: *App) void {
         const game = self.gameAtFiltered(self.selected) orelse return;
         const url = game.url orelse return;
@@ -247,6 +262,8 @@ pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_roo
             .up => moveUp(&app, single_row_step),
             .page_down => moveDown(&app, currentBodyRows(&app)),
             .page_up => moveUp(&app, currentBodyRows(&app)),
+            .prev_day => app.navigateDay(.prev),
+            .next_day => app.navigateDay(.next),
             .top => {
                 app.selected = 0;
                 app.scroll = 0;
@@ -270,7 +287,7 @@ pub fn run(allocator: Allocator, io: std.Io, client: *std.http.Client, cache_roo
     }
 }
 
-const Key = enum { none, quit, down, up, page_down, page_up, top, bottom, enter, back, refresh, open_browser, auto, help, filter };
+const Key = enum { none, quit, down, up, page_down, page_up, prev_day, next_day, top, bottom, enter, back, refresh, open_browser, auto, help, filter };
 
 fn readKey(io: std.Io, timeout_ms: i32) !Key {
     if (!try inputReady(timeout_ms)) return .none;
@@ -281,6 +298,8 @@ fn readKey(io: std.Io, timeout_ms: i32) !Key {
         'k' => .up,
         'd', ' ' => .page_down,
         'u' => .page_up,
+        'h' => .prev_day,
+        'l' => .next_day,
         'g' => .top,
         'G' => .bottom,
         '\r', '\n' => .enter,
@@ -318,6 +337,8 @@ fn readEscapeKey(io: std.Io) !Key {
     return switch (b2) {
         'A' => .up,
         'B' => .down,
+        'C' => .next_day,
+        'D' => .prev_day,
         '5' => blk: {
             if (try inputReady(0)) _ = try readByte(io);
             break :blk .page_up;
@@ -421,6 +442,8 @@ fn render(app: *App) !void {
             \\a          Toggle auto-refresh
             \\/          Filter
             \\d/u        Page down/up
+            \\h/l        Previous/next day
+            \\←/→        Previous/next day
             \\g/G        Top/bottom
             \\q          Quit
             \\
@@ -494,9 +517,9 @@ fn renderFooter(w: *std.Io.Writer, app: *App, cols: usize) !void {
     const meta = meta_writer.buffered();
 
     const long_keys = if (app.filter.len > 0)
-        "j/k move · d/u page · enter open · o browser · r refresh · / filter · ? help · q quit"
+        "j/k move · h/l day · d/u page · enter open · o browser · r refresh · / filter · ? help · q quit"
     else
-        "j/k move · d/u page · enter open · o browser · / filter · ? help · q quit";
+        "j/k move · h/l day · d/u page · enter open · o browser · / filter · ? help · q quit";
     const short_keys = "? help · q quit";
     const keys = if (cols >= long_keys.len + meta.len + footer_gap_cols) long_keys else short_keys;
     try writeFooterLine(w, app.color, cols, keys, meta);
@@ -634,6 +657,44 @@ fn statusLabel(status: model.StatusKind) []const u8 {
         .postponed => "PPD",
         .unknown => "",
     };
+}
+
+const DateDir = enum { prev, next };
+
+fn dateLink(links: []const model.Link, dir: DateDir) ?[]const u8 {
+    for (links) |link| {
+        const text = std.mem.trim(u8, link.text, " \t\r\n");
+        switch (dir) {
+            .prev => if (isPreviousDateLink(text)) return link.href,
+            .next => if (isNextDateLink(text)) return link.href,
+        }
+    }
+    return null;
+}
+
+fn isPreviousDateLink(text: []const u8) bool {
+    return std.mem.startsWith(u8, text, "< ") and !std.mem.startsWith(u8, text, "< All ");
+}
+
+fn isNextDateLink(text: []const u8) bool {
+    return std.mem.endsWith(u8, text, " >");
+}
+
+pub const DateLinkForTest = struct {
+    href: []const u8,
+    text: []const u8,
+};
+
+pub fn dateLinkForTest(links: []const DateLinkForTest, dir: []const u8) ?[]const u8 {
+    const want: DateDir = if (std.mem.eql(u8, dir, "prev")) .prev else .next;
+    for (links) |link| {
+        const text = std.mem.trim(u8, link.text, " \t\r\n");
+        switch (want) {
+            .prev => if (isPreviousDateLink(text)) return link.href,
+            .next => if (isNextDateLink(text)) return link.href,
+        }
+    }
+    return null;
 }
 
 const GameTextParts = struct {

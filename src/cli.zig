@@ -90,7 +90,7 @@ pub fn printHelp(writer: anytype) !void {
         \\  --version             Print version
         \\  --help                Print help
         \\
-        \\Keys: j/down move · k/up move · enter open · r refresh · / filter · a auto · ? help · b back · q quit
+        \\Keys: j/down move · k/up move · h/left prev day · l/right next day · enter open · r refresh · / filter · a auto · ? help · b back · q quit
         \\
     , .{});
 }

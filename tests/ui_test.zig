@@ -97,6 +97,16 @@ test "lineup rendering supports zebra colors" {
     try std.testing.expect(std.mem.indexOf(u8, rendered, "\x1b[48;5;236") != null);
 }
 
+test "date links ignore all-scores back link" {
+    const links = [_]ui.DateLinkForTest{
+        .{ .href = "https://plaintextsports.com/mlb/", .text = "< All MLB Scores" },
+        .{ .href = "https://plaintextsports.com/nba/2026-04-24/", .text = "< Apr. 24" },
+        .{ .href = "https://plaintextsports.com/nba/2026-04-26/", .text = "Apr. 26 >" },
+    };
+    try std.testing.expectEqualStrings("https://plaintextsports.com/nba/2026-04-24/", ui.dateLinkForTest(&links, "prev").?);
+    try std.testing.expectEqualStrings("https://plaintextsports.com/nba/2026-04-26/", ui.dateLinkForTest(&links, "next").?);
+}
+
 test "body budget reserves footer row" {
     const body_rows = ui.bodyRowsForTest(small_terminal_rows, false);
     try std.testing.expectEqual(small_terminal_rows - footer_row_count, body_rows);
