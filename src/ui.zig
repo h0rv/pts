@@ -1007,13 +1007,27 @@ fn promptFilter(io: std.Io, allocator: Allocator, old: []const u8) ![]u8 {
         if (b[0] == '\r' or b[0] == '\n') break;
         if (b[0] == escape_key) break;
         if (b[0] == delete_key or b[0] == backspace_key) {
-            if (list.items.len > 0) list.shrinkRetainingCapacity(list.items.len - single_row_step);
+            if (list.items.len > 0) {
+                list.shrinkRetainingCapacity(list.items.len - single_row_step);
+                try writeStdout(io, "\x08 \x08");
+            }
             continue;
         }
+        if (!isFilterInputByte(b[0])) continue;
         try list.append(allocator, b[0]);
+        try writeStdout(io, &b);
     }
+    try writeStdout(io, "\x1b[?25l");
     if (list.items.len == 0) return allocator.dupe(u8, "");
     return list.toOwnedSlice(allocator);
+}
+
+fn isFilterInputByte(b: u8) bool {
+    return b >= ' ' and b != delete_key;
+}
+
+pub fn isFilterInputByteForTest(b: u8) bool {
+    return isFilterInputByte(b);
 }
 
 fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
