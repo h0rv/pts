@@ -17,6 +17,23 @@ pub fn fetchPage(
     client: *std.http.Client,
     url: []const u8,
 ) FetchError![]u8 {
+    const body = try fetchPageOnce(allocator, client, url);
+    errdefer allocator.free(body);
+    if (metaRefreshUrl(body)) |next| {
+        const absolute = try absoluteUrl(allocator, next);
+        defer allocator.free(absolute);
+        const redirected = fetchPageOnce(allocator, client, absolute) catch return body;
+        allocator.free(body);
+        return redirected;
+    }
+    return body;
+}
+
+fn fetchPageOnce(
+    allocator: std.mem.Allocator,
+    client: *std.http.Client,
+    url: []const u8,
+) FetchError![]u8 {
     var body = try std.Io.Writer.Allocating.initCapacity(allocator, 32 * 1024);
     errdefer body.deinit();
 
@@ -36,4 +53,20 @@ pub fn fetchPage(
     if (result.status.class() != .success) return error.HttpStatus;
     if (body.written().len > max_body_size) return error.BodyTooLarge;
     return try body.toOwnedSlice();
+}
+
+fn metaRefreshUrl(body: []const u8) ?[]const u8 {
+    const meta = std.ascii.indexOfIgnoreCase(body, "http-equiv=\"refresh\"") orelse return null;
+    const content = std.ascii.indexOfIgnoreCasePos(body, meta, "content=\"") orelse return null;
+    const start = content + "content=\"".len;
+    const end = std.mem.indexOfScalarPos(u8, body, start, '"') orelse return null;
+    const value = body[start..end];
+    const url_pos = std.ascii.indexOfIgnoreCase(value, "url=") orelse return null;
+    return std.mem.trim(u8, value[url_pos + "url=".len ..], " \t'\"");
+}
+
+fn absoluteUrl(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    if (std.mem.startsWith(u8, input, "http://") or std.mem.startsWith(u8, input, "https://")) return allocator.dupe(u8, input);
+    if (std.mem.startsWith(u8, input, "/")) return std.fmt.allocPrint(allocator, "{s}{s}", .{ model.base_url, input });
+    return std.fmt.allocPrint(allocator, "{s}/{s}", .{ model.base_url, input });
 }

@@ -9,7 +9,7 @@ Set Height 560
 Set Padding 12
 Set Theme "Monokai Pro (Filter Ristretto)"
 
-Type "./zig-out/bin/pts"
+Type "./zig-out/bin/pts --date 2026-04-24"
 Enter
 Sleep 1500ms
 Down 11
